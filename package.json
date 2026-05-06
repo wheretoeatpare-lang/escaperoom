@@ -4,15 +4,18 @@
   "description": "3D Multiplayer Escape Room — Three.js + WebSockets",
   "main": "server.js",
   "scripts": {
-    "start":     "node server.js",
-    "dev":       "node server.js",
-    "serve-web": "npx http-server . -p 3000 --cors -o"
+    "start": "node server.js",
+    "dev": "node server.js",
+    "serve-web": "npx http-server . -p 3000 --cors -o",
+    "deploy": "wrangler deploy",
+    "preview": "wrangler dev"
   },
   "dependencies": {
     "ws": "^8.16.0"
   },
   "devDependencies": {
-    "http-server": "^14.1.1"
+    "http-server": "^14.1.1",
+    "wrangler": "^4.88.0"
   },
   "engines": {
     "node": ">=16"
