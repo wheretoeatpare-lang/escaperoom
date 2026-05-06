@@ -136,7 +136,7 @@ export class Room3 {
     this._box(scene,0.14,doorH+0.14,0.24,[doorW/2+0.07,doorH/2,-5.1],framMat);
     this._box(scene,doorW+0.28,0.14,0.24,[0,doorH+0.07,-5.1],framMat);
     // Gold accents on frame
-    [[−doorW/2-0.07,doorH,-5.05],[doorW/2+0.07,doorH,-5.05]].forEach(([x,y,z])=>{
+    [[-doorW/2-0.07,doorH,-5.05],[doorW/2+0.07,doorH,-5.05]].forEach(([x,y,z])=>{
       const gem=new THREE.Mesh(new THREE.SphereGeometry(0.06,8,8),goldMat);
       gem.position.set(x,y,z); scene.add(gem); this._meshes.push(gem);
     });
