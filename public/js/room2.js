@@ -99,19 +99,14 @@ export class Room2 {
     this._box(scene, W,0.12,D, [0,-0.06,0], floorMat, false, true);
     this._box(scene, W,0.12,D, [0,H+0.06,0], ceilMat, false, true);
 
-    // Walls
-    this._box(scene, W,H,0.2, [0,H/2,-5.1], stoneMat, false, true); // back (exit)
+    // Walls (NO full back wall - built with gap below)
     this._box(scene, 0.2,H,D, [-5.1,H/2,0], stoneDk, false, true);
     this._box(scene, 0.2,H,D, [5.1,H/2,0], stoneDk, false, true);
 
-    // Front wall (entry from room1) — solid, no door needed after entering
+    // Front wall (entry from room1) - solid
     this._box(scene, W,H,0.2, [0,H/2,5.1], stoneMat, false, true);
 
-    // Back (exit) wall with door gap
-    // Already added full back wall above — we'll subtract door by splitting
-    // Actually rebuild back wall with gap:
-    // Remove full back and replace with sides + top
-    // (We added it already — that's ok, door frame covers it)
+    // Back (exit) wall WITH door gap - three pieces only
     this._box(scene, sideW,H,0.2, [-5+sideW/2,H/2,-5.1], stoneMat, false, true);
     this._box(scene, sideW,H,0.2, [5-sideW/2,H/2,-5.1], stoneMat, false, true);
     this._box(scene, doorW,H-doorH,0.2, [0,doorH+(H-doorH)/2,-5.1], stoneMat, false, true);
@@ -335,7 +330,7 @@ export class Room2 {
   }
 
   // Called by puzzle system when player clicks a symbol panel
-  pressSymbol(sym, mesh, gs) {
+  pressSymbol(sym, mesh, gs, snd) {
     if(this.symbolSolved) return;
     const st = this._puzzleSymbols;
     st.pressed.push(sym);
@@ -352,7 +347,7 @@ export class Room2 {
     const correct = st.pressed.every((s,i)=>s===st.answer[i]);
 
     if(!correct){
-      // Wrong! Reset
+      snd?.playSymbolWrong();
       setTimeout(()=>{
         st.pressed = [];
         this._updateSymbolStatus([], []);
@@ -364,10 +359,9 @@ export class Room2 {
     this._updateSymbolStatus(st.pressed, st.answer);
 
     if(n === st.answer.length){
-      // SOLVED!
       this.symbolSolved = true;
+      snd?.playSuccess();
       this._flashAllPanels(0x00ff88);
-      // Green glow on all
       st.panels.forEach(p=>{ p.light.color.set(0x00ff88); p.light.intensity=0.8; });
       this._checkBothSolved(gs);
     }
@@ -485,20 +479,19 @@ export class Room2 {
     };
   }
 
-  startSimon(gs) {
+  startSimon(gs, snd) {
     const st = this._simonState;
     if(st.phase!=='idle') return;
     this._updateSimonDisplay('WATCH...','#ffdd44');
     st.phase='showing';
     st.showStep=0;
     st.playerInput=[];
-    this._showNextSimonStep(gs);
+    this._showNextSimonStep(gs, snd);
   }
 
-  _showNextSimonStep(gs) {
+  _showNextSimonStep(gs, snd) {
     const st = this._simonState;
     if(st.showStep >= st.sequence.length){
-      // Done showing — player's turn
       setTimeout(()=>{
         st.phase='input';
         st.playerInput=[];
@@ -509,21 +502,20 @@ export class Room2 {
     const padIdx = st.sequence[st.showStep];
     const pad = st.pads[padIdx];
     setTimeout(()=>{
-      // Light up
+      snd?.playSimonPad(padIdx);
       pad.mat.emissiveIntensity=1.0;
       setTimeout(()=>{
         pad.mat.emissiveIntensity=0.1;
         st.showStep++;
-        this._showNextSimonStep(gs);
+        this._showNextSimonStep(gs, snd);
       }, 550);
     }, 200);
   }
 
-  pressSimon(padIdx, gs) {
+  pressSimon(padIdx, gs, snd) {
     const st = this._simonState;
     if(st.phase!=='input' || this.simonSolved) return;
 
-    // Flash pressed pad
     const pad = st.pads[padIdx];
     pad.mat.emissiveIntensity=0.9;
     setTimeout(()=>pad.mat.emissiveIntensity=0.1, 300);
@@ -531,9 +523,8 @@ export class Room2 {
     st.playerInput.push(padIdx);
     const n = st.playerInput.length;
 
-    // Check this step
     if(st.playerInput[n-1] !== st.sequence[n-1]){
-      // Wrong!
+      snd?.playSimonWrong();
       this._updateSimonDisplay('WRONG! RESTARTING...','#ff4444');
       st.phase='idle';
       setTimeout(()=>{
@@ -545,10 +536,10 @@ export class Room2 {
     this._updateSimonDisplay(`YOUR TURN (${n}/${st.sequence.length})`, '#44ffaa');
 
     if(n === st.sequence.length){
-      // SOLVED!
       this.simonSolved=true;
       st.phase='solved';
-      this._updateSimonDisplay('✓ SEQUENCE CORRECT!','#00ff88');
+      snd?.playSimonComplete();
+      this._updateSimonDisplay('SEQUENCE CORRECT!','#00ff88');
       st.pads.forEach(p=>{p.mat.emissiveIntensity=1.0; p.mat.emissive.set(0x00ff88);});
       this._checkBothSolved(gs);
     }

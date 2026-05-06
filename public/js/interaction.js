@@ -1,13 +1,14 @@
-// interaction.js — Raycasting, hover highlight, click / E-key dispatch (all rooms)
+// interaction.js -- Raycasting, hover highlight, click / E-key dispatch + sounds
 import * as THREE from 'three';
 
 const REACH = 3.8;
 
 export class Interaction {
-  constructor(gameScene, player, puzzle) {
+  constructor(gameScene, player, puzzle, snd) {
     this.gs     = gameScene;
     this.player = player;
     this.puzzle = puzzle;
+    this.snd    = snd || window._snd || null;
 
     this.raycaster = new THREE.Raycaster();
     this.raycaster.far = REACH;
@@ -74,24 +75,28 @@ export class Interaction {
     if (name === 'codeLock')   return '[E] Enter Code';
     if (name === 'note')       return '[E] Read Note';
     if (name === 'symbolRef')  return '[E] Read Symbol Order';
-    if (name === 'simonStart') return '[E] Start Simon Says';
+    if (name === 'simonStart') {
+      const room = this.puzzle.activeRoom;
+      if (room?.simonSolved) return 'Simon: Complete!';
+      if (room?._simonState?.phase === 'showing') return 'Watch the sequence...';
+      if (room?._simonState?.phase === 'input')   return 'Repeat the sequence!';
+      return '[E] Start Simon Says';
+    }
     if (name === 'door') {
-      return this.gs.doorOpen ? '[E] EXIT →' : '[E] Door is locked';
+      return this.gs.doorOpen ? '[E] EXIT -->' : '[E] Door is locked';
     }
     if (name.startsWith('symPanel_')) {
       const sym = mesh.userData.sym || '?';
       return `[E] Press Symbol  ${sym}`;
     }
-    if (name.startsWith('simon')) {
+    if (name.startsWith('simon') && name !== 'simonStart') {
       const room = this.puzzle.activeRoom;
-      if (room && room._simonState) {
-        if (room.simonSolved) return '✅ Simon complete';
-        if (room._simonState.phase === 'input') return '[E] Press this pad';
-        return 'Watch the sequence...';
-      }
+      if (room?.simonSolved) return 'Simon: Complete!';
+      if (room?._simonState?.phase === 'input') return '[E] Press this pad!';
+      return 'Wait for your turn...';
     }
     if (name.startsWith('fragment_')) {
-      return `[E] Collect Key Fragment  🗝`;
+      return `[E] Collect Key Fragment`;
     }
     return '[E] Interact';
   }
@@ -99,19 +104,20 @@ export class Interaction {
   _interact(mesh) {
     const name = mesh.userData.name;
 
-    // ── Room 1 ──
+    // Room 1
     if (name === 'codeLock') { this.puzzle.openLock(); return; }
     if (name === 'note')     { this.puzzle.openNote(); return; }
 
-    // ── Room 2: Symbol panels ──
+    // Room 2: Symbol panels
     if (name.startsWith('symPanel_')) {
+      this.snd?.playSymbolPress();
       this.puzzle.pressSymbolPanel(mesh.userData.sym, mesh);
       return;
     }
     // Room 2: Symbol reference card
     if (name === 'symbolRef') { this.puzzle.openSymbolRef(); return; }
 
-    // Room 2: Simon Says — start button (the speaker top)
+    // Room 2: Simon Says start
     if (name === 'simonStart') {
       this.puzzle.startSimon();
       return;
@@ -119,23 +125,27 @@ export class Interaction {
     // Room 2: Simon pads
     if (name.startsWith('simon') && name !== 'simonStart') {
       const idx = mesh.userData.simonIdx;
-      if (idx !== undefined) this.puzzle.pressSimonPad(idx);
+      if (idx !== undefined) {
+        this.snd?.playSimonPad(idx);
+        this.puzzle.pressSimonPad(idx);
+      }
       return;
     }
 
-    // ── Room 3: Fragments ──
+    // Room 3: Fragments
     if (name.startsWith('fragment_')) {
       const idx = mesh.userData.fragIdx;
       if (idx !== undefined) this.puzzle.collectFragment(idx);
       return;
     }
 
-    // ── Door (all rooms) ──
+    // Door (all rooms)
     if (name === 'door') {
       if (this.gs.doorOpen) {
         window._escapeRoomWin?.();
       } else {
-        this.puzzle.showMessage('🔒 The door is sealed. Solve the puzzles first!');
+        this.snd?.playError();
+        this.puzzle.showMessage('The door is sealed. Solve the puzzles first!');
       }
       return;
     }
