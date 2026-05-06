@@ -1,0 +1,243 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>🔐 Escape Room 3D</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { overflow: hidden; background: #000; font-family: 'Courier New', monospace; }
+    #gameCanvas { display: block; width: 100vw; height: 100vh; }
+
+    /* ── HUD ─────────────────────────────────────── */
+    #hud {
+      position: fixed; inset: 0;
+      pointer-events: none; user-select: none;
+    }
+    #crosshair {
+      position: absolute; top: 50%; left: 50%;
+      transform: translate(-50%, -50%);
+      color: rgba(255,255,255,0.85);
+      font-size: 22px; line-height: 1;
+      text-shadow: 0 0 4px #000;
+    }
+    #interactHint {
+      position: absolute; top: calc(50% + 36px); left: 50%;
+      transform: translateX(-50%);
+      color: #ffe066; font-size: 13px;
+      background: rgba(0,0,0,0.5);
+      padding: 4px 12px; border-radius: 20px;
+      display: none;
+      text-shadow: none;
+    }
+    #instructions {
+      position: absolute; bottom: 18px; left: 50%;
+      transform: translateX(-50%);
+      color: rgba(255,255,255,0.7); font-size: 12px;
+      background: rgba(0,0,0,0.45);
+      padding: 8px 18px; border-radius: 20px;
+      text-align: center;
+    }
+    #playerList {
+      position: absolute; top: 14px; right: 16px;
+      display: flex; flex-direction: column; gap: 5px;
+    }
+    .playerItem {
+      display: flex; align-items: center; gap: 7px;
+      color: rgba(255,255,255,0.85); font-size: 12px;
+      background: rgba(0,0,0,0.4); padding: 4px 10px; border-radius: 12px;
+    }
+    .playerDot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+
+    /* ── Start Screen ────────────────────────────── */
+    #startScreen {
+      position: fixed; inset: 0;
+      background: radial-gradient(ellipse at center, #1a0a2e 0%, #000 100%);
+      display: flex; flex-direction: column;
+      align-items: center; justify-content: center;
+      color: #fff; cursor: pointer; z-index: 100;
+    }
+    #startScreen h1 {
+      font-size: 52px; font-weight: 900; letter-spacing: 4px;
+      color: #ff6b35; text-shadow: 0 0 40px #ff6b35, 0 0 80px rgba(255,107,53,0.3);
+      margin-bottom: 14px;
+    }
+    #startScreen .subtitle { font-size: 17px; opacity: 0.7; margin-bottom: 8px; }
+    #startScreen .hint { font-size: 12px; opacity: 0.4; margin-top: 18px; }
+    .blink { animation: blink 1.2s infinite; }
+    @keyframes blink { 0%,100%{opacity:0.7} 50%{opacity:0.2} }
+
+    /* ── Modal (shared: puzzle + note) ──────────── */
+    #modal {
+      position: fixed; top: 50%; left: 50%;
+      transform: translate(-50%, -50%) scale(0.95);
+      background: linear-gradient(145deg, #12112a, #1c1b3a);
+      border: 1px solid rgba(255,255,255,0.12);
+      border-radius: 14px; padding: 28px 32px;
+      color: #fff; z-index: 200; display: none; min-width: 320px;
+      box-shadow: 0 0 60px rgba(0,0,0,0.8), inset 0 1px 0 rgba(255,255,255,0.05);
+      animation: modalIn 0.15s ease-out forwards;
+    }
+    @keyframes modalIn {
+      from { transform: translate(-50%,-50%) scale(0.93); opacity:0 }
+      to   { transform: translate(-50%,-50%) scale(1);    opacity:1 }
+    }
+    #modal.open { display: block; }
+    #modal h2 { font-size: 19px; margin-bottom: 16px; color: #ff6b35; letter-spacing: 1px; }
+
+    /* Note display */
+    #noteContent {
+      background: linear-gradient(160deg, #f8f0d8, #f0e4c0);
+      color: #2a1a0a; border-radius: 6px;
+      padding: 16px 18px; font-family: Georgia, serif;
+      font-size: 14px; line-height: 1.7; display: none;
+      border-left: 4px solid #c8a020;
+      box-shadow: inset 0 1px 4px rgba(0,0,0,0.15);
+    }
+    #noteContent strong { font-size: 16px; display: block; margin-bottom: 6px; }
+    #noteContent .code-hint { color: #8B0000; font-size: 17px; font-weight: bold; margin: 8px 0; }
+
+    /* Code lock UI */
+    #lockUI { display: none; }
+    #lockUI .lock-label { font-size: 12px; color: rgba(255,255,255,0.5); margin-bottom: 12px; }
+    #digitRow {
+      display: flex; justify-content: center; gap: 10px; margin-bottom: 14px;
+    }
+    .digitInput {
+      width: 54px; height: 66px;
+      background: #0a091f; border: 2px solid #333;
+      border-radius: 8px; color: #00ff88;
+      font-size: 34px; text-align: center;
+      font-family: 'Courier New', monospace;
+      outline: none; transition: border-color 0.15s;
+    }
+    .digitInput:focus { border-color: #ff6b35; box-shadow: 0 0 0 3px rgba(255,107,53,0.2); }
+    .digitInput.shake { animation: shake 0.3s ease; }
+    @keyframes shake {
+      0%,100%{transform:translateX(0)} 25%{transform:translateX(-5px)} 75%{transform:translateX(5px)}
+    }
+    #errorMsg { color: #ff4466; font-size: 13px; min-height: 18px; margin-bottom: 10px; text-align: center; }
+
+    .btn-row { display: flex; gap: 10px; justify-content: center; }
+    .btn {
+      padding: 10px 24px; border: none; border-radius: 8px;
+      cursor: pointer; font-family: inherit; font-size: 14px; font-weight: bold;
+      transition: transform 0.1s, filter 0.1s;
+    }
+    .btn:active { transform: scale(0.96); }
+    .btn-primary { background: #ff6b35; color: #fff; }
+    .btn-primary:hover { filter: brightness(1.15); }
+    .btn-secondary { background: rgba(255,255,255,0.1); color: rgba(255,255,255,0.8); }
+    .btn-secondary:hover { background: rgba(255,255,255,0.15); }
+
+    /* ── Win Screen ──────────────────────────────── */
+    #winScreen {
+      position: fixed; inset: 0;
+      background: radial-gradient(ellipse at center, #0a2a0a 0%, #000 100%);
+      display: none; flex-direction: column;
+      align-items: center; justify-content: center;
+      color: #fff; z-index: 300;
+    }
+    #winScreen h1 {
+      font-size: 58px; font-weight: 900;
+      color: #00ff88; text-shadow: 0 0 40px #00ff88, 0 0 80px rgba(0,255,136,0.3);
+      animation: glow 1.5s ease-in-out infinite;
+    }
+    @keyframes glow { 0%,100%{text-shadow:0 0 30px #00ff88} 50%{text-shadow:0 0 70px #00ff88, 0 0 120px rgba(0,255,136,0.4)} }
+    #winScreen p { font-size: 19px; margin-top: 18px; opacity: 0.75; }
+    #winTime { color: #ffaa44; font-size: 16px; margin-top: 10px; }
+
+    /* ── Objectives HUD ──────────────────────────── */
+    #objectives {
+      position: absolute; top: 14px; left: 16px;
+      color: rgba(255,255,255,0.75); font-size: 12px;
+      background: rgba(0,0,0,0.4); padding: 10px 14px; border-radius: 10px;
+      max-width: 220px;
+    }
+    #objectives .obj-title { color: #ff6b35; font-weight: bold; margin-bottom: 6px; font-size: 11px; letter-spacing: 1px; }
+    .obj-item { margin: 3px 0; display: flex; align-items: center; gap: 6px; }
+    .obj-item.done { opacity: 0.4; text-decoration: line-through; }
+    .obj-check { color: #00ff88; }
+    .obj-pending { color: rgba(255,255,255,0.3); }
+  </style>
+</head>
+<body>
+
+<canvas id="gameCanvas"></canvas>
+
+<!-- HUD -->
+<div id="hud">
+  <div id="crosshair">+</div>
+  <div id="interactHint"></div>
+  <div id="objectives">
+    <div class="obj-title">⚑ OBJECTIVES</div>
+    <div class="obj-item" id="obj1">
+      <span class="obj-pending">○</span> Find the secret note
+    </div>
+    <div class="obj-item" id="obj2">
+      <span class="obj-pending">○</span> Enter the code on the lock
+    </div>
+    <div class="obj-item" id="obj3">
+      <span class="obj-pending">○</span> Escape through the door
+    </div>
+  </div>
+  <div id="instructions">WASD Move &nbsp;|&nbsp; Mouse Look &nbsp;|&nbsp; E / Click Interact &nbsp;|&nbsp; ESC Pause</div>
+  <div id="playerList"></div>
+</div>
+
+<!-- Start Screen -->
+<div id="startScreen">
+  <h1>🔐 ESCAPE ROOM</h1>
+  <p class="subtitle">3D Multiplayer</p>
+  <p class="blink" style="font-size:16px; margin-top:30px;">Click anywhere to enter</p>
+  <p class="hint">Make sure the WebSocket server is running for multiplayer</p>
+</div>
+
+<!-- Unified Modal -->
+<div id="modal">
+  <h2 id="modalTitle">🔒 CODE LOCK</h2>
+
+  <!-- Note content -->
+  <div id="noteContent"></div>
+
+  <!-- Lock UI -->
+  <div id="lockUI">
+    <p class="lock-label">Enter the 3-digit code:</p>
+    <div id="digitRow">
+      <input class="digitInput" id="d0" type="text" maxlength="1" inputmode="numeric" autocomplete="off" />
+      <input class="digitInput" id="d1" type="text" maxlength="1" inputmode="numeric" autocomplete="off" />
+      <input class="digitInput" id="d2" type="text" maxlength="1" inputmode="numeric" autocomplete="off" />
+    </div>
+    <div id="errorMsg"></div>
+    <div class="btn-row">
+      <button class="btn btn-primary" id="btnUnlock">UNLOCK</button>
+      <button class="btn btn-secondary" id="btnClose">CLOSE</button>
+    </div>
+  </div>
+
+  <!-- Note close button -->
+  <div id="noteClose" style="margin-top:16px; display:none;">
+    <div class="btn-row">
+      <button class="btn btn-secondary" id="btnNoteClose">CLOSE</button>
+    </div>
+  </div>
+</div>
+
+<!-- Win Screen -->
+<div id="winScreen">
+  <h1>🎉 ESCAPED!</h1>
+  <p>You cracked the code and broke free!</p>
+  <p id="winTime"></p>
+</div>
+
+<!-- Three.js via importmap -->
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://unpkg.com/three@0.160.0/build/three.module.js"
+  }
+}
+</script>
+<script type="module" src="js/main.js"></script>
+</body>
+</html>
