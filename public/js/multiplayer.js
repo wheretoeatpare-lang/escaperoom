@@ -19,7 +19,7 @@ export class Multiplayer {
   }
 
   /* ── Connect ────────────────────────────── */
-  connect(url = 'escaperoom-production-501d.up.railway.app') {
+  connect(url = 'wss://escaperoom-production-501d.up.railway.app') {
     try {
       this.ws = new WebSocket(url);
       this.ws.onopen    = ()  => { this.connected = true; console.log('[MP] connected'); };
