@@ -24,7 +24,7 @@ mp.onPuzzleSolved = () => pz.remoteSolve();
 pz.onSolved       = () => mp.sendPuzzleSolved();
 
 // Attempt multiplayer connection (graceful fallback if server absent)
-mp.connect('ws://localhost:8080');
+mp.connect('wss://escaperoom-production-501d.up.railway.app');
 
 /* ═══════════════════════════════════════════
    POSITION SYNC — 20 Hz
