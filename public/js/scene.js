@@ -26,10 +26,10 @@ export class GameScene {
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    this.renderer.toneMappingExposure = 0.85;
+    this.renderer.toneMappingExposure = 1.45;
 
-    this.scene.background = new THREE.Color(0x08080f);
-    this.scene.fog = new THREE.FogExp2(0x08080f, 0.042);
+    this.scene.background = new THREE.Color(0xd4956a);
+    this.scene.fog = new THREE.FogExp2(0xc8845a, 0.012);
 
     this._buildLighting();
     this._buildRoom();
@@ -45,11 +45,11 @@ export class GameScene {
      LIGHTING
   ═══════════════════════════════════════════ */
   _buildLighting() {
-    // Ambient fill — cool, dark
-    this.scene.add(new THREE.AmbientLight(0x20203a, 0.9));
+    // Ambient fill — warm, bright torchlit feel
+    this.scene.add(new THREE.AmbientLight(0xffd8a0, 2.2));
 
     // Ceiling pendant — warm
-    const ceiling = new THREE.PointLight(0xffe8bb, 2.2, 18);
+    const ceiling = new THREE.PointLight(0xffcc77, 4.5, 30);
     ceiling.position.set(0, 3.7, 0);
     ceiling.castShadow = true;
     ceiling.shadow.mapSize.set(1024, 1024);
@@ -61,7 +61,7 @@ export class GameScene {
     // Lamp mesh
     const lampMesh = new THREE.Mesh(
       new THREE.SphereGeometry(0.12, 12, 12),
-      new THREE.MeshBasicMaterial({ color: 0xffe8bb })
+      new THREE.MeshBasicMaterial({ color: 0xffee99 })
     );
     lampMesh.position.copy(ceiling.position);
     this.scene.add(lampMesh);
@@ -69,15 +69,20 @@ export class GameScene {
     // Cord
     const cord = new THREE.Mesh(
       new THREE.CylinderGeometry(0.012, 0.012, 0.28, 6),
-      new THREE.MeshLambertMaterial({ color: 0x222222 })
+      new THREE.MeshLambertMaterial({ color: 0x553322 })
     );
     cord.position.set(0, 3.84, 0);
     this.scene.add(cord);
 
-    // Blue accent from left wall
-    const accent = new THREE.DirectionalLight(0x4455aa, 0.25);
+    // Warm torch fill from left wall
+    const accent = new THREE.DirectionalLight(0xff9944, 0.6);
     accent.position.set(-6, 3, 0);
     this.scene.add(accent);
+
+    // Second warm fill from back-right
+    const fill2 = new THREE.DirectionalLight(0xffc87a, 0.5);
+    fill2.position.set(4, 2, -4);
+    this.scene.add(fill2);
   }
 
   /* ═══════════════════════════════════════════
@@ -292,11 +297,11 @@ export class GameScene {
     // ── WALL LAMP (right wall, z=-1) ─────────
     const wlMat = new THREE.MeshStandardMaterial({color:0x888888,metalness:0.7,roughness:0.3});
     this._box(0.08,0.22,0.25,[4.94,2.8,-1], wlMat);
-    const wlLight = new THREE.PointLight(0xff9944, 0.7, 6);
+    const wlLight = new THREE.PointLight(0xff9944, 1.8, 9);
     wlLight.position.set(4.7, 2.6, -1);
     this.scene.add(wlLight);
     const wlGlobe = new THREE.Mesh(new THREE.SphereGeometry(0.09,8,8),
-      new THREE.MeshBasicMaterial({color:0xffcc88}));
+      new THREE.MeshBasicMaterial({color:0xffdd99}));
     wlGlobe.position.set(4.85,2.65,-1);
     this.scene.add(wlGlobe);
   }
