@@ -1,41 +1,30 @@
-// interaction.js — Raycasting, hover highlight, click / E-key dispatch
+// interaction.js — Raycasting, hover highlight, click / E-key dispatch (all rooms)
 import * as THREE from 'three';
 
-const REACH = 3.8; // max interaction distance
-
-const HINT_LABELS = {
-  codeLock: '[E] Enter Code',
-  note:     '[E] Read Note',
-  door:     null, // set dynamically
-};
+const REACH = 3.8;
 
 export class Interaction {
   constructor(gameScene, player, puzzle) {
-    this.gs      = gameScene;
-    this.player  = player;
-    this.puzzle  = puzzle;
+    this.gs     = gameScene;
+    this.player = player;
+    this.puzzle = puzzle;
 
     this.raycaster = new THREE.Raycaster();
     this.raycaster.far = REACH;
 
-    this.hovered   = null;       // currently hovered interactable mesh
-    this._origEmissive = new Map(); // mesh → original emissive Color
-
+    this.hovered = null;
+    this._origEmissive = new Map();
     this.$hint = document.getElementById('interactHint');
 
     this._setupEvents();
   }
 
-  /* ── Event wiring ───────────────────────── */
   _setupEvents() {
-    // Click (left mouse) — only when pointer locked, no modal open
     document.addEventListener('click', () => {
       if (this.player.locked && !this._modalOpen() && this.hovered) {
         this._interact(this.hovered);
       }
     });
-
-    // E key
     document.addEventListener('keydown', e => {
       if (e.code === 'KeyE' && this.player.locked && !this._modalOpen() && this.hovered) {
         this._interact(this.hovered);
@@ -47,7 +36,6 @@ export class Interaction {
     return document.getElementById('modal').classList.contains('open');
   }
 
-  /* ── Per-frame update ───────────────────── */
   update() {
     if (!this.player.locked || this._modalOpen()) {
       this._clearHighlight();
@@ -55,12 +43,9 @@ export class Interaction {
       return;
     }
 
-    // Cast from camera centre
-    this.raycaster.setFromCamera(new THREE.Vector2(0, 0), this.player.camera);
+    this.raycaster.setFromCamera(new THREE.Vector2(0,0), this.player.camera);
 
-    let closestDist = Infinity;
-    let closestMesh = null;
-    let closestName = null;
+    let closestDist = Infinity, closestMesh = null, closestName = null;
 
     for (const [name, mesh] of Object.entries(this.gs.interactables)) {
       const hits = this.raycaster.intersectObject(mesh, true);
@@ -71,50 +56,92 @@ export class Interaction {
       }
     }
 
-    // Update highlight
     if (closestMesh !== this.hovered) {
       this._clearHighlight();
       if (closestMesh) this._highlight(closestMesh);
     }
     this.hovered = closestMesh;
 
-    // Hint label
     if (closestMesh) {
       this.$hint.style.display = 'block';
-      let label = HINT_LABELS[closestName];
-      if (closestName === 'door') {
-        label = this.gs.doorOpen ? '[E] EXIT ROOM →' : '[E] Door is locked';
-      }
-      this.$hint.textContent = label ?? '[E] Interact';
+      this.$hint.textContent   = this._hintFor(closestName, closestMesh);
     } else {
       this.$hint.style.display = 'none';
     }
   }
 
-  /* ── Interaction dispatch ───────────────── */
+  _hintFor(name, mesh) {
+    if (name === 'codeLock')   return '[E] Enter Code';
+    if (name === 'note')       return '[E] Read Note';
+    if (name === 'symbolRef')  return '[E] Read Symbol Order';
+    if (name === 'simonStart') return '[E] Start Simon Says';
+    if (name === 'door') {
+      return this.gs.doorOpen ? '[E] EXIT →' : '[E] Door is locked';
+    }
+    if (name.startsWith('symPanel_')) {
+      const sym = mesh.userData.sym || '?';
+      return `[E] Press Symbol  ${sym}`;
+    }
+    if (name.startsWith('simon')) {
+      const room = this.puzzle.activeRoom;
+      if (room && room._simonState) {
+        if (room.simonSolved) return '✅ Simon complete';
+        if (room._simonState.phase === 'input') return '[E] Press this pad';
+        return 'Watch the sequence...';
+      }
+    }
+    if (name.startsWith('fragment_')) {
+      return `[E] Collect Key Fragment  🗝`;
+    }
+    return '[E] Interact';
+  }
+
   _interact(mesh) {
     const name = mesh.userData.name;
-    switch (name) {
-      case 'codeLock':
-        this.puzzle.openLock();
-        break;
-      case 'note':
-        this.puzzle.openNote();
-        break;
-      case 'door':
-        if (this.gs.doorOpen) {
-          // Trigger win from here too (in case player didn't walk through)
-          window._escapeRoomWin?.();
-        } else {
-          this.puzzle.showMessage('🔒 The door is sealed. Find the code!');
-        }
-        break;
+
+    // ── Room 1 ──
+    if (name === 'codeLock') { this.puzzle.openLock(); return; }
+    if (name === 'note')     { this.puzzle.openNote(); return; }
+
+    // ── Room 2: Symbol panels ──
+    if (name.startsWith('symPanel_')) {
+      this.puzzle.pressSymbolPanel(mesh.userData.sym, mesh);
+      return;
+    }
+    // Room 2: Symbol reference card
+    if (name === 'symbolRef') { this.puzzle.openSymbolRef(); return; }
+
+    // Room 2: Simon Says — start button (the speaker top)
+    if (name === 'simonStart') {
+      this.puzzle.startSimon();
+      return;
+    }
+    // Room 2: Simon pads
+    if (name.startsWith('simon') && name !== 'simonStart') {
+      const idx = mesh.userData.simonIdx;
+      if (idx !== undefined) this.puzzle.pressSimonPad(idx);
+      return;
+    }
+
+    // ── Room 3: Fragments ──
+    if (name.startsWith('fragment_')) {
+      const idx = mesh.userData.fragIdx;
+      if (idx !== undefined) this.puzzle.collectFragment(idx);
+      return;
+    }
+
+    // ── Door (all rooms) ──
+    if (name === 'door') {
+      if (this.gs.doorOpen) {
+        window._escapeRoomWin?.();
+      } else {
+        this.puzzle.showMessage('🔒 The door is sealed. Solve the puzzles first!');
+      }
+      return;
     }
   }
 
-  /* ── Hover Highlight ────────────────────── */
   _highlight(mesh) {
-    // Walk the mesh and all children
     mesh.traverse(child => {
       if (!child.isMesh) return;
       const mats = Array.isArray(child.material) ? child.material : [child.material];

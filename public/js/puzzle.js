@@ -1,12 +1,15 @@
-// puzzle.js — Code-lock puzzle system + modal UI management
+// puzzle.js — Unified puzzle controller for all rooms
 export class Puzzle {
   constructor(gameScene) {
     this.gs      = gameScene;
     this.solved  = false;
     this.SECRET  = '137';
 
-    // Timer
     this._startTime = Date.now();
+
+    // Active room reference (set by main.js when room changes)
+    this.activeRoom  = null;
+    this.currentRoom = 1;
 
     // DOM refs
     this.$modal       = document.getElementById('modal');
@@ -21,25 +24,22 @@ export class Puzzle {
       document.getElementById('d2'),
     ];
 
-    // External callbacks
-    this.onSolved = null; // called when puzzle is first solved
+    this.onSolved    = null;
+    this.onRoomClear = null;
 
     this._initUI();
   }
 
-  /* ── UI Setup ───────────────────────────── */
   _initUI() {
     document.getElementById('btnUnlock').addEventListener('click', () => this._checkCode());
-    document.getElementById('btnClose').addEventListener('click', () => this.close());
+    document.getElementById('btnClose').addEventListener('click',  () => this.close());
     document.getElementById('btnNoteClose').addEventListener('click', () => this.close());
 
     this.$digits.forEach((inp, i) => {
       inp.addEventListener('keydown', e => {
         if (e.key === 'Enter') { this._checkCode(); return; }
-        // Backspace: clear + move back
         if (e.key === 'Backspace' && !inp.value && i > 0) {
-          this.$digits[i-1].focus();
-          this.$digits[i-1].value = '';
+          this.$digits[i-1].focus(); this.$digits[i-1].value = '';
         }
       });
       inp.addEventListener('input', () => {
@@ -49,30 +49,20 @@ export class Puzzle {
     });
   }
 
-  /* ── Open code lock modal ───────────────── */
+  /* ════════════════════════════════
+     ROOM 1
+  ════════════════════════════════ */
   openLock() {
-    if (this.solved) {
-      this.showMessage('✅ Already unlocked! The door is open.');
-      return;
-    }
+    if (this.solved) { this.showMessage('✅ Already unlocked! The door is open.'); return; }
     this._showModal('lock');
     this.$digits.forEach(d => d.value = '');
     this.$error.textContent = '';
     this.$digits[0].focus();
   }
 
-  /* ── Open note modal ────────────────────── */
   openNote() {
     this._showModal('note');
-
-    // Mark objective 1 done
-    const obj1 = document.getElementById('obj1');
-    if (obj1 && !obj1.classList.contains('done')) {
-      obj1.classList.add('done');
-      obj1.querySelector('.obj-pending,.obj-check').className = 'obj-check';
-      obj1.querySelector('.obj-check').textContent = '✓';
-    }
-
+    this._markObjective(1);
     this.$noteContent.innerHTML = `
       <strong>✦ Secret Note ✦</strong>
       The ancient wardens spoke of a code passed through the ages...<br><br>
@@ -82,18 +72,14 @@ export class Puzzle {
     `;
   }
 
-  /* ── Show generic message ───────────────── */
   showMessage(text) {
     this._showModal('note');
     this.$noteContent.innerHTML = `<span style="font-size:15px;">${text}</span>`;
   }
 
-  /* ── Close modal ────────────────────────── */
   close() {
     this.$modal.classList.remove('open');
     this.$modal.style.display = 'none';
-
-    // Re-lock pointer if game is running
     setTimeout(() => {
       if (!document.getElementById('startScreen').style.display ||
           document.getElementById('startScreen').style.display === 'none') {
@@ -102,55 +88,128 @@ export class Puzzle {
     }, 80);
   }
 
-  /* ── Called from network (another player solved) ── */
   remoteSolve() {
     if (this.solved) return;
     this.solved = true;
     this.gs.openDoor();
-    this._markObjective2();
+    this._markObjective(2);
     this.showMessage('🎉 A teammate cracked the code! The door is open!');
   }
 
-  /* ── Internals ──────────────────────────── */
-  _showModal(mode) {
-    // Unlock pointer first
-    if (document.pointerLockElement) document.exitPointerLock();
+  /* ════════════════════════════════
+     ROOM 2 — Symbol puzzle
+  ════════════════════════════════ */
+  openSymbolRef() {
+    const room = this.activeRoom;
+    if (!room || !room._puzzleSymbols) return;
+    this._showModal('note');
+    const {answer, pressed} = room._puzzleSymbols;
+    this.$noteContent.innerHTML = `
+      <strong>📜 Symbol Order</strong><br><br>
+      Press the wall symbols in this exact order:<br><br>
+      <span style="font-size:30px; letter-spacing:14px; color:#88aaff; display:block; text-align:center; margin:10px 0;">${answer.join('  ')}</span><br>
+      ${room.symbolSolved
+        ? '<span style="color:#44ff88; font-weight:bold;">✓ Symbol puzzle solved!</span>'
+        : `Progress: <b style="color:#aaccff;">${pressed.length} / 3 pressed</b>`}
+      <br><br><span style="opacity:0.5;font-size:11px;">Find the matching symbols on the north wall and press them in order.</span>
+    `;
+  }
 
+  pressSymbolPanel(sym, mesh) {
+    const room = this.activeRoom;
+    if (!room || room.symbolSolved) return;
+    room.pressSymbol(sym, mesh, this.gs);
+    const n = room._puzzleSymbols.pressed.length;
+    if (!room.symbolSolved) this._toast(`Symbol ${n}/3 pressed...`);
+  }
+
+  /* ════════════════════════════════
+     ROOM 2 — Simon Says
+  ════════════════════════════════ */
+  startSimon() {
+    const room = this.activeRoom;
+    if (!room) return;
+    if (room.simonSolved) { this._toast('✅ Simon puzzle already complete!'); return; }
+    if (room._simonState.phase !== 'idle') return;
+    room.startSimon(this.gs);
+  }
+
+  pressSimonPad(padIdx) {
+    const room = this.activeRoom;
+    if (!room || room.simonSolved || room._simonState.phase !== 'input') return;
+    room.pressSimon(padIdx, this.gs);
+  }
+
+  /* ════════════════════════════════
+     ROOM 3 — Fragment hunt
+  ════════════════════════════════ */
+  collectFragment(fragIdx) {
+    const room = this.activeRoom;
+    if (!room) return;
+    const frag = room._fragments[fragIdx];
+    if (!frag || frag.found) return;
+    room.collectFragment(fragIdx, this.gs);
+    const newCount = room._fragmentsFound;
+    const total    = room._fragments.length;
+    this._toast(`🗝 Key fragment collected! (${newCount}/${total})`);
+  }
+
+  /* ════════════════════════════════
+     INTERNALS
+  ════════════════════════════════ */
+  _showModal(mode) {
+    if (document.pointerLockElement) document.exitPointerLock();
     this.$modal.style.display = 'block';
     this.$modal.classList.add('open');
-    // Force re-trigger animation
     this.$modal.style.animation = 'none';
-    this.$modal.offsetHeight; // reflow
+    this.$modal.offsetHeight;
     this.$modal.style.animation = '';
 
     if (mode === 'lock') {
-      this.$title.textContent      = '🔒 CODE LOCK';
+      this.$title.textContent         = '🔒 CODE LOCK';
       this.$noteContent.style.display = 'none';
-      this.$lockUI.style.display   = 'block';
-      this.$noteClose.style.display= 'none';
+      this.$lockUI.style.display      = 'block';
+      this.$noteClose.style.display   = 'none';
     } else {
-      this.$title.textContent      = '📜 NOTE';
+      this.$title.textContent         = '📜 NOTE';
       this.$noteContent.style.display = 'block';
-      this.$lockUI.style.display   = 'none';
-      this.$noteClose.style.display= 'block';
+      this.$lockUI.style.display      = 'none';
+      this.$noteClose.style.display   = 'block';
     }
+  }
+
+  _toast(msg) {
+    let t = document.getElementById('pzToast');
+    if (!t) {
+      t = document.createElement('div');
+      t.id = 'pzToast';
+      Object.assign(t.style, {
+        position:'fixed', bottom:'82px', left:'50%',
+        transform:'translateX(-50%)',
+        background:'rgba(20,8,0,0.88)',
+        color:'#ffcc66', fontFamily:"'Courier New', monospace",
+        fontSize:'13px', padding:'7px 20px',
+        borderRadius:'20px', zIndex:'250',
+        border:'1px solid rgba(255,180,60,0.3)',
+        pointerEvents:'none', transition:'opacity 0.4s',
+      });
+      document.body.appendChild(t);
+    }
+    t.textContent = msg;
+    t.style.opacity = '1';
+    clearTimeout(t._timer);
+    t._timer = setTimeout(() => t.style.opacity = '0', 2600);
   }
 
   _checkCode() {
     const entered = this.$digits.map(d => d.value).join('');
-    if (entered.length < 3) {
-      this._flashError('Enter all 3 digits!');
-      return;
-    }
-
+    if (entered.length < 3) { this._flashError('Enter all 3 digits!'); return; }
     if (entered === this.SECRET) {
       this._onSolve();
     } else {
       this._flashError('✗ Wrong code. Try again.');
       this.$digits.forEach(d => {
-        d.classList.remove('shake');
-        void d.offsetWidth; // reflow
-        d.classList.add('shake');
+        d.classList.remove('shake'); void d.offsetWidth; d.classList.add('shake');
         setTimeout(() => d.classList.remove('shake'), 350);
         d.value = '';
       });
@@ -162,33 +221,27 @@ export class Puzzle {
     this.solved = true;
     this.close();
     this.gs.openDoor();
-    this._markObjective2();
-
+    this._markObjective(2);
     if (this.onSolved) this.onSolved();
-
-    // Show door-open notification (briefly)
-    setTimeout(() => {
-      this.showMessage('🔓 CLICK! The door is open! Head to the exit!');
-    }, 1600);
+    setTimeout(() => this.showMessage('🔓 CLICK! The door is open! Head to the exit!'), 1600);
   }
 
-  _markObjective2() {
-    const obj2 = document.getElementById('obj2');
-    if (obj2 && !obj2.classList.contains('done')) {
-      obj2.classList.add('done');
-      const sp = obj2.querySelector('.obj-pending,.obj-check');
+  _markObjective(n) {
+    const el = document.getElementById(`obj${n}`);
+    if (el && !el.classList.contains('done')) {
+      el.classList.add('done');
+      const sp = el.querySelector('.obj-pending,.obj-check');
       if (sp) { sp.className='obj-check'; sp.textContent='✓'; }
     }
   }
 
   _flashError(msg) {
     this.$error.textContent = msg;
-    setTimeout(() => { this.$error.textContent=''; }, 2400);
+    setTimeout(() => this.$error.textContent = '', 2400);
   }
 
   getElapsed() {
-    const s = Math.floor((Date.now() - this._startTime)/1000);
-    const m = Math.floor(s/60);
-    return `${m}m ${s%60}s`;
+    const s = Math.floor((Date.now()-this._startTime)/1000);
+    return `${Math.floor(s/60)}m ${s%60}s`;
   }
 }
